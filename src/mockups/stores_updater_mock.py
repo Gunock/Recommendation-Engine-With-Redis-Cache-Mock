@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 from time import sleep
@@ -6,48 +7,64 @@ from src import properties
 from src.db.cassandra_client import CassandraClient
 
 os.environ["CQLENG_ALLOW_SCHEMA_MANAGEMENT"] = "1"
-
-_cassandra_client = CassandraClient(host=properties.CASSANDRA_HOST, port=properties.CASSANDRA_PORT)
-_mock_user_id_range = range(1, properties.PROFILE_COUNT + 1)
-_profile_template = {'genre-Adventure': 0.0, 'genre-Animation': 0.0, 'genre-Children': 0.0, 'genre-Comedy': 0.0,
-                     'genre-Fantasy': 0.0, 'genre-Romance': 0.0, 'genre-Drama': 0.0, 'genre-Action': 0.0,
-                     'genre-Crime': 0.0, 'genre-Thriller': 0.0, 'genre-Horror': 0.0, 'genre-Mystery': 0.0,
-                     'genre-Sci-Fi': 0.0, 'genre-IMAX': 0.0, 'genre-Documentary': 0.0, 'genre-War': 0.0,
-                     'genre-Musical': 0.0, 'genre-Film-Noir': 0.0, 'genre-Western': 0.0, 'genre-Short': 0.0}
+properties.setup_logging()
 
 
-def start_stores_updater_mock() -> None:
-    _initialize_mock_profiles()
-    while True:
-        random_profile: dict = _generate_random_profile()
-        print('updating profile ' + str(random_profile['userId']))
-        _cassandra_client.add_profile(random_profile['userId'], random_profile)
-        sleep(1 / properties.PROFILE_UPDATE_FREQUENCY)
+class StoresUpdaterMock:
+    def __init__(self):
+        self._cassandra_client = CassandraClient(host=properties.CASSANDRA_HOST, port=properties.CASSANDRA_PORT)
+        self._mock_user_id_range = range(1, properties.PROFILE_COUNT + 1)
+
+    def start(self) -> None:
+        """
+        Starts infinite loop in which random profiles are updated.
+
+        :return None
+        """
+        self._initialize_mock_profiles()
+        logging.info('Stores updater started')
+        # Infinite loop
+        while True:
+            random_profile: dict = self._generate_random_profile()
+            logging.info('Updating profile ' + str(random_profile['userId']))
+            self._cassandra_client.add_profile(random_profile['userId'], random_profile)
+            sleep(1 / properties.PROFILE_UPDATE_FREQUENCY)
+
+    def _initialize_mock_profiles(self) -> None:
+        """
+        Saves profiles from mock user id range into Cassandra database.
+
+        :return None
+        """
+        for user_id in self._mock_user_id_range:
+            random_profile: dict = self._generate_random_profile(user_id)
+            self._cassandra_client.add_profile(user_id, random_profile)
+
+    def _generate_random_profile(self, user_id: int = None) -> dict:
+        """
+        Creates profile from template with random values.
+
+        :param user_id: userId to assigned to generated profile
+        :return: generated profile
+        """
+        result: dict = properties.PROFILE_TEMPLATE
+        for key in result.keys():
+            result[key] = random.random() * 10 - 5
+
+        if user_id is None:
+            result['userId'] = random.randint(self._mock_user_id_range.start, len(self._mock_user_id_range))
+        else:
+            result['userId'] = user_id
+        return result
 
 
-# Saves profiles from mock user id range into Cassandra database
-def _initialize_mock_profiles() -> None:
-    for user_id in _mock_user_id_range:
-        random_profile: dict = _generate_random_profile(user_id)
-        _cassandra_client.add_profile(user_id, random_profile)
+def _main() -> None:
+    """
+    Starts stores updater mock.
 
-
-def _generate_random_profile(user_id: int = None) -> dict:
-    global _profile_template
-
-    result: dict = _profile_template
-    for key in result.keys():
-        result[key] = random.random() * 10 - 5
-
-    if user_id is None:
-        result['userId'] = random.randint(_mock_user_id_range.start, len(_mock_user_id_range))
-    else:
-        result['userId'] = user_id
-    return result
-
-
-def _main():
-    start_stores_updater_mock()
+    :return None
+    """
+    StoresUpdaterMock().start()
 
 
 if __name__ == "__main__":

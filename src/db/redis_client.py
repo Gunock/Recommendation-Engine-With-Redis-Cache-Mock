@@ -1,6 +1,7 @@
 import redis
 from ujson import loads, dumps
 
+from src import properties
 from src.db.db_client import DbClient
 
 
@@ -13,38 +14,47 @@ class RedisClient(DbClient):
         self.connection.close()
 
     def profile_exists(self, user_id: int) -> bool:
-        return self._row_exists(user_id)
+        """
+        Check if profile exists in Redis database.
+
+        :param user_id: userId of profile to be checked
+        :return True if profile exists in database, otherwise False
+        """
+        return self.connection.exists(user_id)
 
     def get_profile(self, user_id: int) -> dict:
+        """
+        Retrieves profile from Redis database.
+
+        :param user_id: userId of profile to be retrieved
+        :return profile if exists, otherwise empty dict
+        """
         if not self.profile_exists(user_id):
             return {}
-        return self._get_row(user_id)
+        return loads(self.connection.get(user_id).decode())
 
     def add_profile(self, user_id: int, profile_json: dict) -> None:
-        self._add_row(user_id, profile_json)
-        # TODO: Consider using profile expire
-        self.connection.expire(user_id, time=5)  # Parameterize time
+        """
+        Save profile in Redis database.
 
-    def remove_profile(self, user_id: int) -> dict:
-        result: dict = self.get_profile(user_id)
-        self._delete_row(user_id)
-        return result
+        :param user_id: userId of profile to be saved
+        :param profile_json: profile details
+        :return None
+        """
+        self.connection.set(user_id, dumps(profile_json))
+        self.connection.expire(user_id, time=properties.PROFILE_EXPIRE_TIME)
+
+    def remove_profile(self, user_id: int) -> None:
+        """
+        Removes profile from Redis database.
+
+        :param user_id:
+        :return None
+        """
+        self.connection.delete(user_id)
 
     def clear_db(self) -> None:
+        """
+        Removes everything from Redis database.
+        """
         self.connection.flushdb()
-
-    def _add_row(self, key: int, value: dict) -> None:
-        self.connection.set(key, dumps(value))
-
-    def _get_row(self, key: int) -> dict:
-        value: str = self.connection.get(key).decode()
-        return loads(value)
-
-    def _get_keys(self) -> list:
-        return self.connection.keys()
-
-    def _delete_row(self, key: int) -> None:
-        self.connection.delete(key)
-
-    def _row_exists(self, key: int) -> bool:
-        return self.connection.exists(key)

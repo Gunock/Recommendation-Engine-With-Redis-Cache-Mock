@@ -1,5 +1,3 @@
-from uuid import uuid1
-
 from cassandra.cqlengine import columns
 from cassandra.cqlengine.models import Model
 
@@ -7,7 +5,6 @@ from cassandra.cqlengine.models import Model
 class UserProfile(Model):
     __keyspace__ = 'wti_cache'
     __table_name__ = 'user_profiles'
-    uuid = columns.UUID(required=True, default=uuid1)
     user_id = columns.Integer(required=True, primary_key=True)
     genre_adventure = columns.Float(required=False, default=0.0)
     genre_animation = columns.Float(required=False, default=0.0)

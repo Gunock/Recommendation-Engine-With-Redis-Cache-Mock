@@ -1,41 +1,107 @@
+import logging
+import time
 from time import sleep
 
-from ujson import loads, dumps
+from ujson import dumps, loads
 
 from src import properties
 from src.db.redis_client import RedisClient
 
-_redis_client = RedisClient(host=properties.REDIS_HOST, port=properties.REDIS_PORT)
+properties.setup_logging()
 
 
-def start_recommendation_engine() -> None:
-    # subscribes to recommendation engine communication channel
-    pubsub = _redis_client.connection.pubsub()
-    pubsub.psubscribe(**{'re_comm': _request_handler})
-    pubsub.run_in_thread(sleep_time=.01)
-    print('recommendation engine started')
+class RecommendationEngine:
+    def __init__(self):
+        self._redis_client = RedisClient(host=properties.REDIS_HOST, port=properties.REDIS_PORT)
+        self._task_id: int = 0
+        self._pubsub = self._redis_client.connection.pubsub()
+        self._profile_updated: dict = {}
 
-    # mock loop
-    while True:
-        mock_user_id = properties.get_random_profile_id()
-        print()
-        print('sending user id ' + str(mock_user_id))
-        # TODO: Add profile acquisition timeout
-        _redis_client.connection.publish('ps_comm', dumps({'userId': mock_user_id}))
-        # TODO: Print profiles if in cache
-        # TODO: Print default profile (all values to 0) if not in cache
-        sleep(properties.PROFILE_ACQUISITION_FREQUENCY)
+    def __del__(self):
+        self._pubsub.close()
 
+    def start(self) -> None:
+        """
+        Starts infinite loop in which random profiles are retrieved with given frequency.
 
-def _request_handler(message) -> None:
-    message_data = loads(message['data'])
-    print('received response ' + str(message_data))
-    if message_data['latest']:
-        print(message_data)
+        :return None
+        """
+        self._pubsub.subscribe(**{'dummy': self._dummy_handler})
+        self._pubsub.run_in_thread(sleep_time=0.005)
+        logging.info('Recommendation engine started')
+        # Infinite loop
+        while True:
+            mock_user_id = properties.get_random_user_id()
+            profile: dict = self._retrieve_profile(mock_user_id)
+            logging.info(profile)
+            logging.info('')
+            sleep(properties.PROFILE_RETRIEVAL_FREQUENCY)
+
+    @staticmethod
+    def _dummy_handler() -> None:
+        """
+        Just an empty function.
+
+        :return None
+        """
+        pass
+
+    def _retrieve_profile(self, user_id: int) -> dict:
+        """
+        Sends task to profile server and retrieves profile from Redis cache.
+        Profile is retrieved after timeout or after profile server response.
+
+        :param user_id: userId of profile to be retrieved
+        :return: Profile
+        """
+        # Start to be used in measurement of whole profile retrieval execution time in seconds
+        time_measure_start: float = time.time()
+
+        # Submit task
+        self._profile_updated[self._task_id] = False
+        self._redis_client.connection.publish('ps_comm', dumps({'taskId': self._task_id, 'userId': user_id}))
+
+        # Subscribe for task response
+        self._pubsub.psubscribe(**{'task_{}'.format(self._task_id): self._request_handler})
+
+        # Wait for profile update
+        time_start: float = time.time()
+        while not self._profile_updated[self._task_id] \
+                and time.time() - time_start < properties.PROFILE_UPDATE_TIMEOUT:
+            sleep(0.01)
+
+        # Cleanup after profile update wait
+        del self._profile_updated[self._task_id]
+        self._pubsub.punsubscribe('task_{}'.format(self._task_id))
+        self._task_id += 1
+
+        # Profile retrieval
+        profile: dict = self._redis_client.get_profile(user_id)
+        if profile == {}:
+            profile = properties.PROFILE_TEMPLATE
+        logging.info('Profile {} retrieval took {}s'.format(user_id, time.time() - time_measure_start))
+        return profile
+
+    def _request_handler(self, message) -> None:
+        """
+        Handles task response messages.
+
+        :param message: Redis pubsub message
+        :return None
+        """
+        task_id = loads(message['data'])['taskId']
+        if task_id in self._profile_updated:
+            self._profile_updated[task_id] = True
+            logging.info('Profile ready to be retrieved before timeout')
 
 
 def _main() -> None:
-    start_recommendation_engine()
+    """
+    Starts recommendation engine.
+
+    :return None
+    """
+    RecommendationEngine().start()
 
 
 if __name__ == '__main__':

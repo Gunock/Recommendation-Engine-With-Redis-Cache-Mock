@@ -1,6 +1,5 @@
-import multiprocessing
+import logging
 import os
-from multiprocessing.pool import ThreadPool
 from time import sleep
 
 from ujson import loads, dumps
@@ -11,80 +10,81 @@ from src.db.redis_client import RedisClient
 
 os.environ["CQLENG_ALLOW_SCHEMA_MANAGEMENT"] = "1"
 
-_redis_client = RedisClient(host=properties.REDIS_HOST, port=properties.REDIS_PORT)
-_cassandra_client = CassandraClient(host=properties.CASSANDRA_HOST, port=properties.CASSANDRA_PORT)
-_mock_user_id: int = properties.get_random_profile_id()
+properties.setup_logging()
 
 
-# TODO: Remove timeout from profile server
+class ProfileServer:
+    def __init__(self):
+        self._redis_client = RedisClient(host=properties.REDIS_HOST, port=properties.REDIS_PORT)
+        self._cassandra_client = CassandraClient(host=properties.CASSANDRA_HOST, port=properties.CASSANDRA_PORT)
+        self._mock_user_id: int = properties.get_random_user_id()
 
-def start_profile_server() -> None:
-    print('starting profile server...')
-    # TODO: Add random amount of profiles in cache (eg. 4th to half of profile count) at start
-    _put_all_profiles_in_cache()
-    print('profiles loaded to cache')
+    def start(self) -> None:
+        """
+        Subscribes for pubsub channel for task handling and runs infinite loop.
 
-    # subscribes to profile server communication channel
-    pubsub = _redis_client.connection.pubsub()
-    pubsub.psubscribe(**{'ps_comm': _request_handler})
-    pubsub.run_in_thread(sleep_time=.01)
-    print('profile server started')
-    while True:
-        sleep(10)
+        :return None
+        """
+        logging.info('Starting profile server...')
+        self._preload_profiles_to_cache()
+        logging.info('Profiles loaded to cache')
 
+        # Subscribes to profile server communication channel
+        pubsub = self._redis_client.connection.pubsub()
+        pubsub.psubscribe(**{'ps_comm': self._request_handler})
+        pubsub.run_in_thread(sleep_time=.01)
+        logging.info('Profile server started')
 
-def _put_profile_in_cache(user_id: int):
-    profile: dict = _cassandra_client.get_profile(user_id)
-    _redis_client.add_profile(user_id, profile)
+        # Infinite loop
+        while True:
+            # Sleep prevents loop from blocking other threads
+            sleep(10)
 
+    def _put_profile_in_cache(self, user_id: int) -> None:
+        """
+        Retrieves profile from Cassandra database and saves it in Redis cache.
 
-def _put_all_profiles_in_cache():
-    for i in range(1 + properties.PROFILE_COUNT + 1):
-        _put_profile_in_cache(i)
+        :param user_id: userId of profile to be saved in cache
+        :return None
+        """
+        profile: dict = self._cassandra_client.get_profile(user_id)
+        self._redis_client.add_profile(user_id, profile)
 
+    def _preload_profiles_to_cache(self) -> None:
+        """
+        Loads profiles into Redis cache with amount based on profile percentage specified in properties.
 
-def _request_handler(message) -> None:
-    message_data = loads(message['data'])
-    print('received request: ' + str(message_data))
-    if 'userId' not in message_data:
-        _redis_client.connection.publish('re_comm', dumps({'success': False, 'message': 'incorrect request'}))
-        return
+        :return None
+        """
+        self._redis_client.clear_db()
+        profile_id_list = properties.get_random_user_id_list()
+        for i in profile_id_list:
+            self._put_profile_in_cache(i)
 
-    # Creates thread pool and tries to check and update profile in given time
-    thread = ThreadPool(processes=1)
-    res = thread.apply_async(_update_profile, (int(message_data['userId']),))
-    latest: bool = True
-    try:
-        res.get(timeout=properties.PROFILE_UPDATE_TIMEOUT)
-    except multiprocessing.TimeoutError:
-        latest = False
+    def _request_handler(self, message) -> None:
+        """
+        Handles task messages.
 
-    _redis_client.connection.publish('re_comm', dumps({'success': True, 'in_cache': True, 'latest': latest}))
-    # If profile not latest in given time, then wait for thread to update it
-    if not latest:
-        res.get()
-        thread.terminate()
+        :param message: Redis pubsub message
+        :return: None
+        """
+        message_data = loads(message['data'])
+        task_id = message_data['taskId']
+        logging.info('Received request: ' + str(message_data))
 
-
-def _update_profile(user_id: int):
-    sleep(properties.get_random_delay_secs())
-    _put_profile_in_cache(user_id)
-    # TODO: Remove after analysis
-    # if not _redis_client.profile_exists(user_id):
-    #     print('profile {} not present in cache'.format(user_id))
-    # else:
-    #     cass_uuid = _cassandra_client.get_profile_uuid(user_id)
-    #     cache_uuid = _redis_client.get_profile(user_id)['uuid']
-    #     if cache_uuid != cass_uuid:
-    #         print('profile {} in cache is outdated'.format(user_id))
-    #         sleep(properties.get_random_delay_secs())
-    #         _put_profile_in_cache(user_id)
-    #     else:
-    #         print('profile {} in cache is up-to-date'.format(user_id))
+        # Sleep with random time represents read delays
+        sleep(properties.get_random_delay_secs())
+        self._put_profile_in_cache(int(message_data['userId']))
+        self._redis_client.connection.publish('task_{}'.format(task_id), dumps({'taskId': task_id, 'success': True}))
 
 
 def _main() -> None:
-    start_profile_server()
+    """
+    Starts profile server.
+
+    :return None
+    """
+    ProfileServer().start()
 
 
 if __name__ == "__main__":
