@@ -5,7 +5,7 @@ from ujson import loads, dumps
 from src import properties
 from src.db.redis_client import RedisClient
 
-_redis_client = RedisClient()
+_redis_client = RedisClient(host=properties.REDIS_HOST, port=properties.REDIS_PORT)
 
 
 def start_recommendation_engine() -> None:
@@ -20,7 +20,10 @@ def start_recommendation_engine() -> None:
         mock_user_id = properties.get_random_profile_id()
         print()
         print('sending user id ' + str(mock_user_id))
+        # TODO: Add profile acquisition timeout
         _redis_client.connection.publish('ps_comm', dumps({'userId': mock_user_id}))
+        # TODO: Print profiles if in cache
+        # TODO: Print default profile (all values to 0) if not in cache
         sleep(properties.PROFILE_ACQUISITION_FREQUENCY)
 
 

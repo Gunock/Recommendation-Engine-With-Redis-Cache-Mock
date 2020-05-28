@@ -1,6 +1,11 @@
 import os
 import random
 
+REDIS_HOST = str(os.environ.get('wti.redisAddress', default='localhost'))
+REDIS_PORT = int(os.environ.get('wti.redisPort', default=6379))
+CASSANDRA_HOST = str(os.environ.get('wti.cassandraAddress', default='localhost'))
+CASSANDRA_PORT = int(os.environ.get('wti.cassandraPort', default=9042))
+
 PROFILE_COUNT = int(os.environ.get('wti.profileCount', default=100))
 PROFILE_UPDATE_FREQUENCY = int(os.environ.get('wti.profileUpdateFrequency', default=2))
 PROFILE_ACQUISITION_FREQUENCY = int(os.environ.get('wti.profileAcquisitionFrequency', default=1))

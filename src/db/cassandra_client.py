@@ -6,8 +6,8 @@ from src.db.db_client import DbClient
 
 
 class CassandraClient(DbClient):
-    def __init__(self, cluster_host: str = 'localhost', cluster_port: int = 9042):
-        self.cluster: Cluster = Cluster([cluster_host], port=cluster_port)
+    def __init__(self, host: str = 'localhost', port: int = 9042):
+        self.cluster: Cluster = Cluster([host], port=port)
         self.session: Session = self.cluster.connect()
         connection.set_session(self.session)
         management.create_keyspace_simple(UserProfile.__keyspace__, replication_factor=1)

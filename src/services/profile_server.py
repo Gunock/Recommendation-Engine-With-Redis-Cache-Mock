@@ -1,5 +1,5 @@
-import os
 import multiprocessing
+import os
 from multiprocessing.pool import ThreadPool
 from time import sleep
 
@@ -11,13 +11,16 @@ from src.db.redis_client import RedisClient
 
 os.environ["CQLENG_ALLOW_SCHEMA_MANAGEMENT"] = "1"
 
-_redis_client = RedisClient()
-_cassandra_client = CassandraClient()
+_redis_client = RedisClient(host=properties.REDIS_HOST, port=properties.REDIS_PORT)
+_cassandra_client = CassandraClient(host=properties.CASSANDRA_HOST, port=properties.CASSANDRA_PORT)
 _mock_user_id: int = properties.get_random_profile_id()
 
 
+# TODO: Remove timeout from profile server
+
 def start_profile_server() -> None:
     print('starting profile server...')
+    # TODO: Add random amount of profiles in cache (eg. 4th to half of profile count) at start
     _put_all_profiles_in_cache()
     print('profiles loaded to cache')
 
@@ -64,18 +67,20 @@ def _request_handler(message) -> None:
 
 
 def _update_profile(user_id: int):
-    if not _redis_client.profile_exists(user_id):
-        print('profile {} not present in cache'.format(user_id))
-        _put_profile_in_cache(user_id)
-    else:
-        cass_uuid = _cassandra_client.get_profile_uuid(user_id)
-        cache_uuid = _redis_client.get_profile(user_id)['uuid']
-        if cache_uuid != cass_uuid:
-            print('profile {} in cache is outdated'.format(user_id))
-            sleep(properties.get_random_delay_secs())
-            _put_profile_in_cache(user_id)
-        else:
-            print('profile {} in cache is up-to-date'.format(user_id))
+    sleep(properties.get_random_delay_secs())
+    _put_profile_in_cache(user_id)
+    # TODO: Remove after analysis
+    # if not _redis_client.profile_exists(user_id):
+    #     print('profile {} not present in cache'.format(user_id))
+    # else:
+    #     cass_uuid = _cassandra_client.get_profile_uuid(user_id)
+    #     cache_uuid = _redis_client.get_profile(user_id)['uuid']
+    #     if cache_uuid != cass_uuid:
+    #         print('profile {} in cache is outdated'.format(user_id))
+    #         sleep(properties.get_random_delay_secs())
+    #         _put_profile_in_cache(user_id)
+    #     else:
+    #         print('profile {} in cache is up-to-date'.format(user_id))
 
 
 def _main() -> None:

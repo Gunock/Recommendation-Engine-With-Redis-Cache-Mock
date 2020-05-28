@@ -7,7 +7,7 @@ from src.db.cassandra_client import CassandraClient
 
 os.environ["CQLENG_ALLOW_SCHEMA_MANAGEMENT"] = "1"
 
-_cassandra_client = CassandraClient()
+_cassandra_client = CassandraClient(host=properties.CASSANDRA_HOST, port=properties.CASSANDRA_PORT)
 _mock_user_id_range = range(1, properties.PROFILE_COUNT + 1)
 _profile_template = {'genre-Adventure': 0.0, 'genre-Animation': 0.0, 'genre-Children': 0.0, 'genre-Comedy': 0.0,
                      'genre-Fantasy': 0.0, 'genre-Romance': 0.0, 'genre-Drama': 0.0, 'genre-Action': 0.0,

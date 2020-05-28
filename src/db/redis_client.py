@@ -22,6 +22,8 @@ class RedisClient(DbClient):
 
     def add_profile(self, user_id: int, profile_json: dict) -> None:
         self._add_row(user_id, profile_json)
+        # TODO: Consider using profile expire
+        self.connection.expire(user_id, time=5)  # Parameterize time
 
     def remove_profile(self, user_id: int) -> dict:
         result: dict = self.get_profile(user_id)
