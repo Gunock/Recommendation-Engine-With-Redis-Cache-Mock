@@ -16,8 +16,12 @@ properties.setup_logging()
 class ProfileServer:
     def __init__(self):
         self._redis_client = RedisClient(host=properties.REDIS_HOST, port=properties.REDIS_PORT)
+        self._pubsub = self._redis_client.connection.pubsub()
         self._cassandra_client = CassandraClient(host=properties.CASSANDRA_HOST, port=properties.CASSANDRA_PORT)
         self._mock_user_id: int = properties.get_random_user_id()
+
+    def __del__(self):
+        self._pubsub.close()
 
     def start(self) -> None:
         """
@@ -30,9 +34,8 @@ class ProfileServer:
         logging.info('Profiles loaded to cache')
 
         # Subscribes to profile server communication channel
-        pubsub = self._redis_client.connection.pubsub()
-        pubsub.psubscribe(**{'ps_comm': self._request_handler})
-        pubsub.run_in_thread(sleep_time=.01)
+        self._pubsub.psubscribe(**{'ps_comm': self._request_handler})
+        self._pubsub.run_in_thread(sleep_time=.01)
         logging.info('Profile server started')
 
         # Infinite loop

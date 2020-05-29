@@ -3,6 +3,7 @@ import os
 import random
 
 # Connection constants
+import sys
 
 REDIS_HOST = str(os.environ.get('wti.redisAddress', default='localhost'))
 REDIS_PORT = int(os.environ.get('wti.redisPort', default=6379))
@@ -13,10 +14,8 @@ CASSANDRA_PORT = int(os.environ.get('wti.cassandraPort', default=9042))
 
 # Percentage of profiles to be loaded into Redis cache on profile server start
 PROFILE_PRELOAD_PERCENT = float(os.environ.get('wti.profileExpireTime', default=0.25))
-if PROFILE_PRELOAD_PERCENT < 0.0:
-    PROFILE_PRELOAD_PERCENT = 0.0
-elif PROFILE_PRELOAD_PERCENT > 1.0:
-    PROFILE_PRELOAD_PERCENT = 1.0
+if PROFILE_PRELOAD_PERCENT < 0.0 or PROFILE_PRELOAD_PERCENT > 1.0:
+    raise ArithmeticError('profile preload percent out of bounds')
 
 # Time after which profile will be expired in Redis cache
 PROFILE_EXPIRE_TIME = int(os.environ.get('wti.profileExpireTime', default=30))
@@ -31,11 +30,11 @@ PROFILE_RETRIEVAL_FREQUENCY = int(os.environ.get('wti.profileAcquisitionFrequenc
 PROFILE_UPDATE_TIMEOUT = float(os.environ.get('wti.profileAcquisitionTimeout', default=0.1))
 
 # Default profile (profile of unknown user)
-PROFILE_TEMPLATE = {'genre-Adventure': 0.0, 'genre-Animation': 0.0, 'genre-Children': 0.0, 'genre-Comedy': 0.0,
-                    'genre-Fantasy': 0.0, 'genre-Romance': 0.0, 'genre-Drama': 0.0, 'genre-Action': 0.0,
-                    'genre-Crime': 0.0, 'genre-Thriller': 0.0, 'genre-Horror': 0.0, 'genre-Mystery': 0.0,
-                    'genre-Sci-Fi': 0.0, 'genre-IMAX': 0.0, 'genre-Documentary': 0.0, 'genre-War': 0.0,
-                    'genre-Musical': 0.0, 'genre-Film-Noir': 0.0, 'genre-Western': 0.0, 'genre-Short': 0.0}
+PROFILE_TEMPLATE = {'genre-adventure': 0.0, 'genre-animation': 0.0, 'genre-children': 0.0, 'genre-comedy': 0.0,
+                    'genre-fantasy': 0.0, 'genre-romance': 0.0, 'genre-drama': 0.0, 'genre-action': 0.0,
+                    'genre-crime': 0.0, 'genre-thriller': 0.0, 'genre-horror': 0.0, 'genre-mystery': 0.0,
+                    'genre-sci-fi': 0.0, 'genre-imax': 0.0, 'genre-documentary': 0.0, 'genre-war': 0.0,
+                    'genre-musical': 0.0, 'genre-film-noir': 0.0, 'genre-western': 0.0, 'genre-short': 0.0}
 
 # Delay constants
 
@@ -84,6 +83,44 @@ def get_random_user_id_list() -> list:
     return result
 
 
-def setup_logging():
-    log_format = '%(asctime)-15s : %(message)s'
-    logging.basicConfig(format=log_format, level=logging.INFO)
+def setup_logging() -> None:
+    """
+    Adds color formatting to logs and sets log level to INFO.
+
+    :return: None
+    """
+    red = '\u001b[31m'
+    green = '\u001b[32m'
+    yellow = '\u001b[33m'
+    blue = '\u001b[34m'
+    reset = '\u001b[39;49m'
+
+    level_colors = {
+        'WARNING': yellow,
+        'INFO': green,
+        'DEBUG': green,
+        'CRITICAL': red,
+        'ERROR': red
+    }
+
+    class ColorFormatter(logging.Formatter):
+        def __init__(self, log_format):
+            super().__init__(log_format)
+
+        def format(self, record):
+            if record.levelname in level_colors:
+                record.levelname = "{color_begin}{level:>8}{color_end}".format(
+                    level=record.levelname,
+                    color_begin=level_colors[record.levelname],
+                    color_end=reset,
+                )
+            return super(ColorFormatter, self).format(record)
+
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(logging.INFO)
+    formatter = ColorFormatter('{}%(asctime)-15s %(levelname)s{} : %(message)s'.format(blue, reset))
+    ch.setFormatter(formatter)
+
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger('').handlers = []
+    logging.getLogger('').addHandler(ch)

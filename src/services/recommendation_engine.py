@@ -13,8 +13,8 @@ properties.setup_logging()
 class RecommendationEngine:
     def __init__(self):
         self._redis_client = RedisClient(host=properties.REDIS_HOST, port=properties.REDIS_PORT)
-        self._task_id: int = 0
         self._pubsub = self._redis_client.connection.pubsub()
+        self._task_id: int = 0
         self._profile_updated: dict = {}
 
     def __del__(self):
